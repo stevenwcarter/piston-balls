@@ -1,33 +1,43 @@
 use ball::{collide_balls, Ball};
+use opengl_graphics::GlGraphics;
 use piston_window::*;
 
 pub mod ball;
+pub mod config;
 
-pub fn render() {
-    let mut window: PistonWindow = WindowSettings::new("Bouncing Balls", [640, 480])
-        .exit_on_esc(true)
-        .build()
-        .unwrap();
+pub struct App {
+    pub gl: GlGraphics,
+    pub balls: Vec<Ball>,
+}
 
-    let mut balls: Vec<Ball> = (0..10).map(|_| Ball::default()).collect();
+impl App {
+    pub fn new(gl: GlGraphics, ball_count: Option<usize>) -> Self {
+        let balls: Vec<Ball> = (0..ball_count.unwrap_or(5))
+            .map(|_| Ball::default())
+            .collect();
 
-    while let Some(e) = window.next() {
-        window.draw_2d(&e, |c, g, _device| {
-            clear([1.0; 4], g);
+        Self { balls, gl }
+    }
+}
 
-            balls.iter().for_each(|b| b.draw(c, g));
+impl App {
+    pub fn render(&mut self, e: &RenderArgs) {
+        self.gl.draw(e.viewport(), |c, g| {
+            clear([0.0, 0.0, 0.0, 1.0], g);
+
+            self.balls.iter().for_each(|b| b.draw(c, g));
         });
 
         // Update ball positions and velocities
-        balls.iter_mut().for_each(|b| {
+        self.balls.iter_mut().for_each(|b| {
             b.update();
         });
 
         let mut indices_to_update: Vec<(usize, usize)> = Vec::new();
-        (0..balls.len() - 1).for_each(|i| {
-            (i..balls.len() - 1).for_each(|ball_i| {
-                let b1 = balls.get(i).unwrap();
-                let other = balls.get(ball_i).unwrap();
+        (0..self.balls.len()).for_each(|i| {
+            (i + 1..self.balls.len()).for_each(|ball_i| {
+                let b1 = self.balls.get(i).unwrap();
+                let other = self.balls.get(ball_i).unwrap();
                 if b1.check_collision(other) {
                     indices_to_update.push((i, ball_i));
                 }
@@ -35,7 +45,7 @@ pub fn render() {
         });
 
         indices_to_update.iter().for_each(|(i, other_i)| {
-            collide_balls(&mut balls, *i, *other_i);
+            collide_balls(&mut self.balls, *i, *other_i);
             // let b1_copy = *balls.get(*i).unwrap();
             // {
             //     let b2 = *balls.get(*other_i).unwrap();
@@ -48,6 +58,10 @@ pub fn render() {
 
             //     b2.handle_collision(&b1_copy);
             // }
-        })
+        });
+
+        self.balls.iter_mut().for_each(|ball| {
+            ball.check_bounds();
+        });
     }
 }
