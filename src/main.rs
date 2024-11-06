@@ -2,7 +2,10 @@ use opengl_graphics::GlGraphics;
 use piston_window::*;
 use std::env;
 
-use bouncing_balls::{config::CONFIG, App};
+use bouncing_balls::{
+    config::{CONFIG, GRAVITY_X, GRAVITY_Y},
+    App,
+};
 
 fn main() {
     dotenvy::dotenv().ok();
@@ -30,5 +33,53 @@ fn main() {
         if let Some(args) = e.render_args() {
             app.render(&args);
         }
+        if let Some(Button::Keyboard(key)) = e.press_args() {
+            if key == Key::G || key == Key::Down {
+                println!("Toggled gravity down");
+                {
+                    let mut gravity = GRAVITY_Y.write().unwrap();
+                    if *gravity != 0.0 {
+                        *gravity = 0.0
+                    } else {
+                        *gravity = 2.0
+                    }
+                }
+            }
+            if key == Key::Up {
+                println!("Toggled gravity up");
+                {
+                    let mut gravity = GRAVITY_Y.write().unwrap();
+                    if *gravity != 0.0 {
+                        *gravity = 0.0
+                    } else {
+                        *gravity = -2.0
+                    }
+                }
+            }
+            if key == Key::Right {
+                println!("Toggled gravity right");
+                {
+                    let mut gravity = GRAVITY_X.write().unwrap();
+                    if *gravity != 0.0 {
+                        *gravity = 0.0
+                    } else {
+                        *gravity = 2.0
+                    }
+                }
+            }
+            if key == Key::Left {
+                println!("Toggled gravity left");
+                {
+                    let mut gravity = GRAVITY_X.write().unwrap();
+                    if *gravity != 0.0 {
+                        *gravity = 0.0
+                    } else {
+                        *gravity = -2.0
+                    }
+                }
+            }
+
+            println!("Pressed keyboard key '{:?}'", key);
+        };
     }
 }

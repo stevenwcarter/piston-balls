@@ -28,6 +28,8 @@ impl App {
             self.balls.iter().for_each(|b| b.draw(c, g));
         });
 
+        self.balls.sort_by(|a, b| b.y.partial_cmp(&a.y).unwrap());
+
         // Update ball positions and velocities
         self.balls.iter_mut().for_each(|b| {
             b.update();

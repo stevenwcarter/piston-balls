@@ -2,7 +2,7 @@ use opengl_graphics::GlGraphics;
 use piston_window::*;
 use rand::Rng;
 
-use crate::config::CONFIG;
+use crate::config::{CONFIG, GRAVITY_X, GRAVITY_Y};
 
 fn random_color() -> types::Color {
     let mut rng = rand::thread_rng();
@@ -15,8 +15,8 @@ fn random_color() -> types::Color {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ball {
-    x: f64,              // x coordinate
-    y: f64,              // y coordinate
+    pub x: f64,          // x coordinate
+    pub y: f64,          // y coordinate
     vx: f64,             // velocity in x direction
     vy: f64,             // velocity in y direction
     radius: f64,         // radius of circle
@@ -54,14 +54,56 @@ impl Ball {
     pub fn update(&mut self) {
         self.x += self.vx;
         self.y += self.vy;
+        self.vy *= 1.0 - CONFIG.air_resistance;
+        self.vx *= 1.0 - CONFIG.air_resistance;
+    }
+
+    pub fn outside_x_bounds_l(&self) -> bool {
+        self.x - self.radius < 0.0
+    }
+    pub fn outside_x_bounds_r(&self) -> bool {
+        self.x + self.radius > CONFIG.width as f64
+    }
+    pub fn outside_x_bounds(&self) -> bool {
+        self.outside_x_bounds_l() || self.outside_x_bounds_r()
+    }
+    pub fn outside_y_bounds_l(&self) -> bool {
+        self.y - self.radius < 0.0
+    }
+    pub fn outside_y_bounds_r(&self) -> bool {
+        self.y + self.radius > CONFIG.height as f64
+    }
+    pub fn outside_y_bounds(&self) -> bool {
+        self.outside_y_bounds_l() || self.outside_y_bounds_r()
     }
 
     pub fn check_bounds(&mut self) {
-        if self.x - self.radius < 0.0 || self.x + self.radius > CONFIG.width as f64 {
-            self.vx *= -1.0;
+        let starts_outside_bounds = self.outside_x_bounds() || self.outside_y_bounds();
+        if self.outside_x_bounds() {
+            self.vx *= -1.0 * (1.0 - CONFIG.damping_wall);
         }
-        if self.y - self.radius < 0.0 || self.y + self.radius > CONFIG.height as f64 {
-            self.vy *= -1.0;
+        if self.outside_y_bounds() {
+            if *GRAVITY_Y.read().unwrap() > 0.0 && self.outside_y_bounds_r() {
+                self.vy = 0.0;
+            } else {
+                self.vy *= -1.0 * (1.0 - CONFIG.damping_wall);
+            }
+        }
+        if self.outside_x_bounds_l() {
+            self.x = self.radius;
+        }
+        if self.outside_x_bounds_r() {
+            self.x = CONFIG.width as f64 - self.radius;
+        }
+        if self.outside_y_bounds_l() {
+            self.y = self.radius;
+        }
+        if self.outside_y_bounds_r() {
+            self.y = CONFIG.height as f64 - self.radius;
+        }
+        if !starts_outside_bounds {
+            self.vy += *GRAVITY_Y.read().unwrap();
+            self.vx += *GRAVITY_X.read().unwrap();
         }
     }
 
@@ -69,12 +111,49 @@ impl Ball {
         let distance = f64::powi(self.x - other.x, 2) + f64::powi(self.y - other.y, 2);
         let radii = f64::powi(self.radius + other.radius, 2);
 
-        distance <= radii
+        distance * (1.0 + CONFIG.collision_tolerance) <= radii
     }
 }
 
 pub fn collide(ball1: &mut Ball, ball2: &mut Ball) {
     // Calculate the difference in x and y coordinates
+
+    let mut ball_1_x_bounds_fixed = false;
+    let mut ball_1_y_bounds_fixed = false;
+    let mut ball_2_x_bounds_fixed = false;
+    let mut ball_2_y_bounds_fixed = false;
+    if ball1.outside_x_bounds_l() {
+        ball_1_x_bounds_fixed = true;
+        ball1.x = ball1.radius;
+    }
+    if ball1.outside_x_bounds_r() {
+        ball_1_x_bounds_fixed = true;
+        ball1.x = CONFIG.width as f64 - ball1.radius;
+    }
+    if ball1.outside_y_bounds_l() {
+        ball_1_y_bounds_fixed = true;
+        ball1.y = ball1.radius;
+    }
+    if ball1.outside_y_bounds_r() {
+        ball_1_y_bounds_fixed = true;
+        ball1.y = CONFIG.height as f64 - ball1.radius;
+    }
+    if ball2.outside_x_bounds_l() {
+        ball_2_x_bounds_fixed = true;
+        ball2.x = ball2.radius;
+    }
+    if ball2.outside_x_bounds_r() {
+        ball_2_x_bounds_fixed = true;
+        ball2.x = CONFIG.width as f64 - ball2.radius;
+    }
+    if ball2.outside_y_bounds_l() {
+        ball_2_y_bounds_fixed = true;
+        ball2.y = ball2.radius;
+    }
+    if ball2.outside_y_bounds_r() {
+        ball_2_y_bounds_fixed = true;
+        ball2.y = CONFIG.height as f64 - ball2.radius;
+    }
     let dx = ball2.x - ball1.x;
     let dy = ball2.y - ball1.y;
 
@@ -85,21 +164,40 @@ pub fn collide(ball1: &mut Ball, ball2: &mut Ball) {
     }
 
     // Calculate the minimum distance needed to avoid overlap
-    let min_distance = ball1.radius + ball2.radius;
+    let min_distance = (ball1.radius + ball2.radius) * (1.0 + CONFIG.collision_tolerance);
 
     // Check if balls are overlapping
     if distance < min_distance {
         // Calculate the overlap amount
         let overlap = min_distance - distance;
 
-        // Move each ball along the collision normal by half the overlap amount
-        let correction_x = dx / distance * overlap / 2.0;
-        let correction_y = dy / distance * overlap / 2.0;
+        let x_divisor: f64 = if ball_1_x_bounds_fixed || ball_2_x_bounds_fixed {
+            1.0
+        } else {
+            2.0
+        };
+        let y_divisor: f64 = if ball_1_y_bounds_fixed || ball_2_y_bounds_fixed {
+            1.0
+        } else {
+            2.0
+        };
 
-        ball1.x -= correction_x;
-        ball1.y -= correction_y;
-        ball2.x += correction_x;
-        ball2.y += correction_y;
+        // Move each ball along the collision normal by half the overlap amount
+        let correction_x = dx / distance * overlap / x_divisor;
+        let correction_y = dy / distance * overlap / y_divisor;
+
+        if !ball_1_x_bounds_fixed {
+            ball1.x -= correction_x;
+        }
+        if !ball_1_y_bounds_fixed {
+            ball1.y -= correction_y;
+        }
+        if !ball_2_x_bounds_fixed {
+            ball2.x += correction_x;
+        }
+        if !ball_2_y_bounds_fixed {
+            ball2.y += correction_y;
+        }
     }
 
     // Calculate the masses based on radii (assuming mass is proportional to radius)
@@ -135,7 +233,6 @@ pub fn collide(ball1: &mut Ball, ball2: &mut Ball) {
         * (direction1 - collision_angle).sin()
         * (collision_angle + std::f64::consts::PI / 2.0).sin()
         + new_velocity1_normal * collision_angle.sin();
-
     let velocity2_x = speed2
         * (direction2 - collision_angle).sin()
         * (collision_angle + std::f64::consts::PI / 2.0).cos()
@@ -146,10 +243,10 @@ pub fn collide(ball1: &mut Ball, ball2: &mut Ball) {
         + new_velocity2_normal * collision_angle.sin();
 
     // Update the velocities of each ball
-    ball1.vx = velocity1_x;
-    ball1.vy = velocity1_y;
-    ball2.vx = velocity2_x;
-    ball2.vy = velocity2_y;
+    ball1.vx = velocity1_x * (1.0 - CONFIG.damping_ball);
+    ball1.vy = velocity1_y * (1.0 - CONFIG.damping_ball);
+    ball2.vx = velocity2_x * (1.0 - CONFIG.damping_ball);
+    ball2.vy = velocity2_y * (1.0 - CONFIG.damping_ball);
 }
 
 // pub fn collide(ball1: &mut Ball, ball2: &mut Ball) {
